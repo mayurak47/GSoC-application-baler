@@ -91,7 +91,7 @@ def perform_compression(config, project_path):
     print("Compressing...")
     start = time.time()
     compressed, data_before, cleared_col_names = helper.compress(
-        model_path=project_path + "model/model.pt",
+        model_path=project_path + "model/best_model.pt",
         config=config,
     )
     # Converting back to numpyarray
@@ -112,7 +112,7 @@ def perform_decompression(save_as_root, model_name, project_path):
     cleared_col_names = helper.from_pickle(project_path+"compressed_output/column_names.pickle")
     start = time.time()
     decompressed = helper.decompress(
-        model_path=project_path + "model/model.pt",
+        model_path=project_path + "model/best_model.pt",
         input_path=project_path + "compressed_output/compressed.pickle",
         model_name=model_name,
     )

@@ -3,6 +3,7 @@ import time
 
 import pandas as pd
 import torch
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
@@ -10,6 +11,7 @@ import modules.utils as utils
 
 import random
 import numpy as np
+import torch.nn as nn
 
 
 def fit(model, train_dl, train_ds, model_children, regular_param, optimizer, RHO, l1):
@@ -27,13 +29,7 @@ def fit(model, train_dl, train_ds, model_children, regular_param, optimizer, RHO
         inputs = inputs.to(model.device)
         optimizer.zero_grad()
         reconstructions = model(inputs)
-        loss, mse_loss, l1_loss = utils.sparse_loss_function_L1(
-            model_children=model_children,
-            true_data=inputs,
-            reconstructed_data=reconstructions,
-            reg_param=regular_param,
-            validate=False,
-        )
+        loss = nn.L1Loss()(reconstructions, inputs)
 
         loss.backward()
         optimizer.step()
@@ -42,7 +38,7 @@ def fit(model, train_dl, train_ds, model_children, regular_param, optimizer, RHO
 
     epoch_loss = running_loss / counter
     print(f"# Finished. Training Loss: {loss:.6f}")
-    return epoch_loss, mse_loss, l1_loss
+    return epoch_loss
 
 
 def validate(model, test_dl, test_ds, model_children, reg_param):
@@ -59,13 +55,7 @@ def validate(model, test_dl, test_ds, model_children, reg_param):
             counter += 1
             inputs = inputs.to(model.device)
             reconstructions = model(inputs)
-            loss = utils.sparse_loss_function_L1(
-                model_children=model_children,
-                true_data=inputs,
-                reconstructed_data=reconstructions,
-                reg_param=reg_param,
-                validate=True,
-            )
+            loss = nn.L1Loss()(reconstructions, inputs)
             running_loss += loss.item()
 
     epoch_loss = running_loss / counter
@@ -122,19 +112,18 @@ def train(model, variables, train_data, test_data, parent_path, config):
 
     ## Activate LR Scheduler
     if config.lr_scheduler == True:
-        lr_scheduler = utils.LRScheduler(
-            optimizer=optimizer, patience=config.patience
-        )
+        lr_scheduler = StepLR(optimizer=optimizer, step_size=25, gamma=0.5, verbose=True)
 
     # train and validate the autoencoder neural network
     train_loss = []
     val_loss = []
+    best_val_loss = np.inf
     start = time.time()
 
     for epoch in range(epochs):
         print(f"Epoch {epoch + 1} of {epochs}")
 
-        train_epoch_loss, mse_loss_fit, regularizer_loss_fit = fit(
+        train_epoch_loss = fit(
             model=model,
             train_dl=train_dl,
             train_ds=train_ds,
@@ -155,8 +144,12 @@ def train(model, variables, train_data, test_data, parent_path, config):
             reg_param=reg_param,
         )
         val_loss.append(val_epoch_loss)
+
+        if val_epoch_loss < best_val_loss:
+            best_val_loss = val_epoch_loss
+            torch.save(model.state_dict(), "projects/gene-data/model/best_model.pt")
         if config.lr_scheduler:
-            lr_scheduler(val_epoch_loss)
+            lr_scheduler.step()
         if config.early_stopping:
             early_stopping(val_epoch_loss)
             if early_stopping.early_stop:
